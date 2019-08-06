@@ -19,20 +19,34 @@ namespace PortalDeployer
         static int Main(string[] args)
         {
             Console.WriteLine("PortalDeployer (c) Perplex Ltd");
-            int result = Parser.Default.ParseArguments<DownloadOptions, DeployOptions>(args)
-              .MapResult(
-                (DownloadOptions opts) => Run(new DownloadTask(), opts),
-                (DeployOptions opts) => Run(new DeployTask(), opts),
-                errs => 1);
-#if DEBUG
-            Console.WriteLine("Press <Enter> to exit.");
-            Console.ReadLine();
-#endif
-            return result;
+            try
+            {
+                var parser = new Parser(config =>
+                {
+                    config.CaseSensitive = false;
+                    config.HelpWriter = Console.Error;
+                });
+                int result = parser.ParseArguments<DownloadOptions, DeployOptions>(args)
+                  .MapResult(
+                    (DownloadOptions opts) => Run(new DownloadTask(), opts),
+                    (DeployOptions opts) => Run(new DeployTask(), opts),
+                    errs => 255);
+                if (result == 255)
+                {
+                    
+                }
+                return result;
+            }
+            catch (Exception ex)
+            {
+                HandleException(ex);
+                return 2;
+            }
         }
 
         private static int Run<T>(BaseTask<T> task, T opts) where T: BaseOptions
         {
+            Console.WriteLine(task.TaskName);
             task.Options = opts;
             OrganizationServiceProxy serviceProxy = null;
             try

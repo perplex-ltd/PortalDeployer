@@ -20,7 +20,17 @@ namespace PortalDeployer
             set { localDirectory = value; }
         }
 
-        [Option('w', "whatif", Required = false, HelpText = "Indicate if no actual action should be taken.")]
+        [Option('w', "whatIf", Required = false, HelpText = "Indicate if no actual action should be taken.")]
         public bool WhatIf { get; set; }
+
+        [Option('t', "webTemplatesDirectory", Default = "WebTemplates", HelpText = "The directory for the web templates (default: WebTemplates).",
+            Required = false)]
+        public string WebTemplatesDirectory { get; set; }
+
+        [Option('f', "webFilesDirectory", Default = "WebFiles", HelpText = "The directory for the web pages (default: WebFiles).",
+            Required = false)]
+        public string WebFilesDirectory { get; set; }
+
+
     }
 }

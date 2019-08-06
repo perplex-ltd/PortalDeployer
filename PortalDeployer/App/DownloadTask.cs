@@ -11,6 +11,7 @@ namespace PortalDeployer.App
 {
     class DownloadTask : BaseTask<DownloadOptions>
     {
+        public override string TaskName => "Deploy Portal configuration";
 
         private class WebFile
         {
@@ -34,7 +35,8 @@ namespace PortalDeployer.App
                 var content = GetContent(webFile.Id);
                 if (content != null)
                 {
-                    var path = Path.Combine("WebFiles", webPagePaths[webFile.ParentPageId]);
+                    var path = Path.Combine(Options.LocalDirectory, Options.WebFilesDirectory);
+                    path = Path.Combine(path, webPagePaths[webFile.ParentPageId]);
                     CreateDirectory(path);
                     var file = Path.Combine(path, webFile.Name);
                     WriteBinaryFile(file, content);
@@ -185,7 +187,7 @@ namespace PortalDeployer.App
 </fetch>";
 
             var result = Service.RetrieveMultiple(new FetchExpression(fetchXml));
-            var directory = CreateDirectory("WebTemplates");
+            var directory = CreateDirectory(Options.WebTemplatesDirectory);
             foreach (var e in result.Entities)
             {
                 var filename = e["adx_name"] + ".liquid";

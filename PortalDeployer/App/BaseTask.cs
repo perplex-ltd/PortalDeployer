@@ -11,6 +11,8 @@ namespace PortalDeployer.App
 {
     public abstract class BaseTask<T> where T: BaseOptions
     {
+
+        public abstract string TaskName {  get; }
         public T Options { get; set; }
         public OrganizationServiceProxy Service { get; set; }
 
