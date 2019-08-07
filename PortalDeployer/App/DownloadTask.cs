@@ -1,9 +1,11 @@
 ﻿using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -18,6 +20,12 @@ namespace PortalDeployer.App
             public Guid Id;
             public string Name;
             public Guid ParentPageId;
+            public DateTime ModifiedOn;
+        }
+        private class WebFileAttachment
+        {
+            public byte[] Content;
+            public DateTime ModifiedOn;
         }
 
         protected override void RunTask()
@@ -26,23 +34,40 @@ namespace PortalDeployer.App
             DownloadWebFiles();
         }
 
+        /// <summary>
+        /// Downloads all web files, saves them in a folder strucure according to their parent pages and saves a metadata JSON file.
+        /// </summary>
         private void DownloadWebFiles()
         {
             var webPagePaths = GetWebPageTree();
             var webFiles = GetWebFiles();
+            var directory = Path.Combine(Options.LocalDirectory, Options.WebFilesDirectory);
+            var metaData = new ConfigurationMetaData(Path.Combine(directory, "WebFiles.json"));
             foreach (var webFile  in webFiles)
             {
                 var content = GetContent(webFile.Id);
                 if (content != null)
                 {
-                    var path = Path.Combine(Options.LocalDirectory, Options.WebFilesDirectory);
-                    path = Path.Combine(path, webPagePaths[webFile.ParentPageId]);
+                    var path = Path.Combine(directory, webPagePaths[webFile.ParentPageId]);
                     CreateDirectory(path);
-                    var file = Path.Combine(path, webFile.Name);
-                    WriteBinaryFile(file, content);
+                    var filePath = Path.Combine(path, webFile.Name);
+                    var metaDataElement = metaData.GetElementById(webFile.Id);
+                    if (ShouldOverwriteFile(metaDataElement, filePath, webFile.ModifiedOn))
+                    {
+                        metaDataElement.Type = ConfigurationElement.ElementType.WebFile;
+                        metaDataElement.Name = webFile.Name;
+                        metaDataElement.FileName = filePath.Substring(directory.Length + 1);
+                        metaDataElement.ModifiedOn = webFile.ModifiedOn;
+                        metaDataElement.CheckSum = CheckSum.CalculateHash(content);
+                        Console.WriteLine("Saving {0}", filePath.ShortenLeft(80));
+                        WriteBinaryFile(filePath, content);
+                    }
                 }
             }
+            metaData.Update();
         }
+
+        
 
         private byte[] GetContent(Guid id)
         {
@@ -54,6 +79,7 @@ namespace PortalDeployer.App
 <fetch top='1'>
   <entity name='annotation'>
     <attribute name='documentbody' />
+    <attribute name='modifiedon' />
     <filter>
       <condition attribute='objectid' operator='eq' value='{fetchData.objectid/*338733d5-31ad-e911-a97e-002248014773*/}'/>
     </filter>
@@ -86,6 +112,7 @@ namespace PortalDeployer.App
     <attribute name='adx_name' />
     <attribute name='adx_parentpageid' />
     <attribute name='adx_webfileid' />
+    <attribute name='modifiedon' />
     <filter>
       <condition attribute='adx_websiteid' operator='eq' value='{fetchData.adx_websiteid/*2AB10DAB-D681-4911-B881-CC99413F07B6*/}'/>
       <condition attribute='statecode' operator='eq' value='{fetchData.statecode/*0*/}'/>
@@ -101,7 +128,8 @@ namespace PortalDeployer.App
                 {
                     Id = (Guid)e["adx_webfileid"],
                     Name = (string)e["adx_name"],
-                    ParentPageId = ((EntityReference)e["adx_parentpageid"]).Id
+                    ParentPageId = ((EntityReference)e["adx_parentpageid"]).Id,
+                    ModifiedOn = (DateTime)e["modifiedon"]
                 };
             }
         }
@@ -170,6 +198,8 @@ namespace PortalDeployer.App
         private void DownloadWebTemplates()
         {
             Console.WriteLine("Downloading Web Templates");
+            var directory = CreateDirectory(Options.WebTemplatesDirectory);
+            var metaData = new ConfigurationMetaData(Path.Combine(directory, "WebTemplates.json"));
             var fetchData = new
             {
                 adx_websiteid = Website.Id
@@ -180,6 +210,7 @@ namespace PortalDeployer.App
     <attribute name='adx_websiteid' />
     <attribute name='adx_name' />
     <attribute name='adx_source' />
+    <attribute name='modifiedon' />
     <filter>
       <condition attribute='adx_websiteid' operator='eq' value='{fetchData.adx_websiteid}'/>
     </filter>
@@ -187,30 +218,43 @@ namespace PortalDeployer.App
 </fetch>";
 
             var result = Service.RetrieveMultiple(new FetchExpression(fetchXml));
-            var directory = CreateDirectory(Options.WebTemplatesDirectory);
             foreach (var e in result.Entities)
             {
-                var filename = e["adx_name"] + ".liquid";
+                var name = (string)e["adx_name"];
+                var filename = name + ".liquid";
                 var path = Path.Combine(directory, filename);
-                WriteTextFile(path, (string)e["adx_source"]);
-            }
-
-        }
-
-        private void WriteTextFile(string path, string content)
-        {
-            Console.WriteLine("Saving {0} ({1})", path.ShortenLeft(30), content.ShortenRight(50));
-            if (!Options.WhatIf)
-            {
-                using (var writer = File.CreateText(path))
+                var modifiedOn = (DateTime)e["modifiedon"];
+                string content = (string)e["adx_source"];
+                var metaDataElement = metaData.GetElementById(e.Id);
+                if (ShouldOverwriteFile(metaDataElement, path, modifiedOn))
                 {
-                    writer.Write(content);
+                    metaDataElement.Type = ConfigurationElement.ElementType.WebTemplate;
+                    metaDataElement.Name = name;
+                    metaDataElement.FileName = filename;
+                    metaDataElement.RecordId = e.Id;
+                    metaDataElement.ModifiedOn = modifiedOn;
+                    metaDataElement.CheckSum = CheckSum.CalculateHash(content);
+                    Console.WriteLine("Saving {0} ({1})", path.ShortenLeft(30), content.ShortenRight(50));
+                    WriteTextFile(path, content);
                 }
             }
+            metaData.Update();
         }
+
+        private bool ShouldOverwriteFile(ConfigurationElement originalElement, string localPath, DateTime remoteTimestamp)
+        {
+            var localFileHash = CheckSum.CalculateHashFromFile(localPath);
+            if (localFileHash != originalElement.CheckSum)
+            {
+                return AskOverwrite(string.Format("{0} was locally modified. Overwrite? (Yes/No/All)", Path.GetFileName(localPath)));
+            }
+            return (remoteTimestamp != originalElement.ModifiedOn);
+        }
+
+
+
         private void WriteBinaryFile(string path, byte[] content)
         {
-            Console.WriteLine("Saving {0}", path.ShortenLeft(80));
             if (!Options.WhatIf)
             {
                 File.WriteAllBytes(path, content);

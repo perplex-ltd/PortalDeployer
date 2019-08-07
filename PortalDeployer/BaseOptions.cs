@@ -31,6 +31,7 @@ namespace PortalDeployer
             Required = false)]
         public string WebFilesDirectory { get; set; }
 
-
+        [Option('o', "overwriteAll", Default = false, HelpText = "Overwrite all files. Without this option, only changed files will be downloaded or deployed.")]
+        public bool Overwrite { get; set; }
     }
 }

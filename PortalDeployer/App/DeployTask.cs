@@ -21,9 +21,10 @@ namespace PortalDeployer.App
 
         private void DeployWebFiles()
         {
-            var path = @"C:\Users\baenz\source\repos\digital-culture-network\deploy";
+            Console.WriteLine("Web Files");
+            var path = Options.LocalDirectory;
             path = Path.Combine(path, "WebFiles");
-
+            var metaData = new ConfigurationMetaData(Path.Combine(path, "WebFiles.json"));
             var directories = Directory.GetDirectories(path, "*", SearchOption.AllDirectories);
 
 
@@ -48,18 +49,25 @@ namespace PortalDeployer.App
                 foreach (var file in Directory.GetFiles(dir))
                 {
                     var fileName = file.Substring(dir.Length + 1);
-                    Console.Write("Processing {0} ", fileName);
+                    var relativeFileName = file.Substring(path.Length + 1);
+                    if (relativeFileName.ToLower() == "webfiles.json") continue;
+                    var metaDataElement = metaData.GetElementByFilename(relativeFileName);
+                    if (metaDataElement.CheckSum == CheckSum.CalculateHashFromFile(file))
+                    {
+                        continue; // skip loop
+                    }
                     var fetchData = new
                     {
                         adx_websiteid = Website.Id,
                         adx_name = fileName,
-                        pageFilter = pageFilter
+                        pageFilter
                     };
                     var fetchXml = $@"
 <fetch top='1'>
   <entity name='annotation'>
     <attribute name='annotationid' />
     <attribute name='documentbody' />
+    <attribute name='modifiedon' />
     <order attribute='modifiedon' descending='true' />
     <link-entity name='adx_webfile' from='adx_webfileid' to='objectid'>
       <attribute name='adx_name' />
@@ -86,12 +94,20 @@ namespace PortalDeployer.App
                     else
                     {
                         var target = results.Entities[0];
+                        var modifiedOn = (DateTime)target["modifiedon"];
+                        bool shouldDeploy = true;
+                        if (metaDataElement.ModifiedOn < modifiedOn)
+                        {
+                            shouldDeploy = AskOverwrite(string.Format("The remote file has been changed since the {0} was downloaded. Overwrite anyway? (Yes/No/All)", fileName));
+                        }
+
                         var content = Convert.ToBase64String(File.ReadAllBytes(file));
                         if (content == (string)target["documentbody"])
                         {
-                            Console.WriteLine("skipping");
+                            shouldDeploy = false;
                         }
-                        else
+                        
+                        if (shouldDeploy)
                         {
                             Entity entity = new Entity(target.LogicalName, target.Id);
                             entity["documentbody"] = content;
@@ -100,24 +116,29 @@ namespace PortalDeployer.App
                             {
                                 Service.Update(entity);
                             }
+                            entity = Service.Retrieve(entity.LogicalName, entity.Id, new ColumnSet(new string[] { "documentbody", "modifiedon" }));
+                            metaDataElement.CheckSum = CheckSum.CalculateHash((string)entity["documentbody"]);
+                            metaDataElement.ModifiedOn = (DateTime)entity["modifiedon"];
                         }
                     }
 
                 }
             }
+            metaData.Update();
         }
 
         private void DeployWebTemplates()
         {
             Console.WriteLine("Deploying Web Templates");
             var path = Path.Combine(Options.LocalDirectory, Options.WebTemplatesDirectory);
+            var metaData = new ConfigurationMetaData(Path.Combine(path, "WebTemplates.json"));
             var files = Directory.GetFiles(path);
 
             foreach (var file in files)
             {
-                var webTemplateName = file.Substring(path.Length + 1);
-                Console.Write("Processing {0} ", webTemplateName.ShortenRight(30));
-                webTemplateName = webTemplateName.Replace(".liquid", "");
+                var fileName = file.Substring(path.Length + 1);
+                if (fileName.ToLower() == "webtemplates.json") continue;
+                var webTemplateName = fileName.Replace(".liquid", "");
                 var fetchData = new
                 {
                     adx_websiteid = Website.Id,
@@ -128,6 +149,7 @@ namespace PortalDeployer.App
   <entity name='adx_webtemplate'>
     <attribute name='adx_webtemplateid' />
     <attribute name='adx_source' />
+    <attribute name='modifiedon' />
     <filter>
       <condition attribute='adx_websiteid' operator='eq' value='{fetchData.adx_websiteid/*2AB10DAB-D681-4911-B881-CC99413F07B6*/}'/>
       <condition attribute='adx_name' operator='eq' value='{fetchData.adx_name/*Breadcrumbs*/}'/>
@@ -144,11 +166,19 @@ namespace PortalDeployer.App
                     throw new ApplicationException(string.Format("Web Template {0} is not a unique name.", webTemplateName));
                 }
                 var template = results.Entities[0];
-
+                var modifiedOn = (DateTime)template["modifiedon"];
+                var metaDataElement = metaData.GetElementByFilename(fileName);
+                var shouldDeploy = true;
+                if (metaDataElement.ModifiedOn < modifiedOn)
+                {
+                    shouldDeploy = AskOverwrite(string.Format("The remote file has been changed since the {0} was downloaded. Overwrite anyway? (Yes/No/All)", webTemplateName));
+                }
                 var content = File.ReadAllText(file);
+
+
                 if ((string)template["adx_source"] == content)
                 {
-                    Console.WriteLine("skipping");
+                    shouldDeploy = false;
                 }
                 else
                 {
@@ -157,11 +187,16 @@ namespace PortalDeployer.App
                     entity["adx_source"] = content;
                     if (!Options.WhatIf)
                     {
+                        Console.WriteLine("Updating {0}", webTemplateName.ShortenRight(50));
                         Service.Update(entity);
                     }
+                    entity = Service.Retrieve(entity.LogicalName, entity.Id, new ColumnSet(new string[] { "adx_source", "modifiedon" }));
+                    metaDataElement.CheckSum = CheckSum.CalculateHash((string)entity["adx_source"]);
+                    metaDataElement.ModifiedOn = (DateTime)entity["modifiedon"];
                 }
 
             }
+            metaData.Update();
 
         }
     }

@@ -1,9 +1,12 @@
 ﻿using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Client;
 using Microsoft.Xrm.Sdk.Query;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -17,7 +20,47 @@ namespace PortalDeployer.App
         public OrganizationServiceProxy Service { get; set; }
 
         protected EntityReference Website { get; private set; }
-        
+
+        protected void WriteMetaDataFile(object metaData, string path)
+        {
+            string content = JsonConvert.SerializeObject(metaData);
+            WriteTextFile(path, content);
+        }
+
+        protected void WriteTextFile(string path, string content)
+        {
+            if (!Options.WhatIf)
+            {
+                using (var writer = File.CreateText(path))
+                {
+                    writer.Write(content);
+                }
+            }
+        }
+
+        protected bool AskOverwrite(string message)
+        {
+            if (Options.Overwrite) return true;
+            char answer = (char)0;
+            while (true)
+            {
+                Console.WriteLine(message);
+                var input = Console.ReadLine().ToLower();
+                answer = input.FirstOrDefault();
+                switch (answer)
+                {
+                    case 'a':
+                        Options.Overwrite = true;
+                        goto case 'y';
+                    case 'y':
+                        return true;
+                    case 'n':
+                        return false;
+                    default: break; // do nothing;
+                }
+            }
+        }
+
         public void Run()
         {
             Website = GetWebsite();

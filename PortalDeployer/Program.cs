@@ -4,6 +4,7 @@ using PortalDeployer.App;
 using PortalDeployer.Crm;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IdentityModel.Tokens;
 using System.Linq;
 using System.ServiceModel;
@@ -31,9 +32,10 @@ namespace PortalDeployer
                     (DownloadOptions opts) => Run(new DownloadTask(), opts),
                     (DeployOptions opts) => Run(new DeployTask(), opts),
                     errs => 255);
-                if (result == 255)
+                if (Debugger.IsAttached)
                 {
-                    
+                    Console.WriteLine("Press any key to continue...");
+                    Console.ReadKey();
                 }
                 return result;
             }
