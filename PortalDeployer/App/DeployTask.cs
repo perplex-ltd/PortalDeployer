@@ -111,7 +111,7 @@ namespace PortalDeployer.App
                         {
                             Entity entity = new Entity(target.LogicalName, target.Id);
                             entity["documentbody"] = content;
-                            Console.WriteLine("updating");
+                            Console.WriteLine("Updating {0}", relativeFileName.ShortenLeft(50));
                             if (!Options.WhatIf)
                             {
                                 Service.Update(entity);
