@@ -169,20 +169,21 @@ namespace PortalDeployer.App
                 var modifiedOn = (DateTime)template["modifiedon"];
                 var metaDataElement = metaData.GetElementByFilename(fileName);
                 var shouldDeploy = true;
+                var forceDeploy = false;
                 if (metaDataElement.ModifiedOn < modifiedOn)
                 {
                     shouldDeploy = AskOverwrite(string.Format("The remote file has been changed since the {0} was downloaded. Overwrite anyway? (Yes/No/All)", webTemplateName));
+                    forceDeploy = shouldDeploy;
                 }
                 var content = File.ReadAllText(file);
 
 
-                if ((string)template["adx_source"] == content)
+                if (!forceDeploy && (string)template["adx_source"] == content)
                 {
                     shouldDeploy = false;
                 }
                 else
                 {
-                    Console.WriteLine("updating");
                     var entity = new Entity("adx_webtemplate", template.Id);
                     entity["adx_source"] = content;
                     if (!Options.WhatIf)
